@@ -1,5 +1,7 @@
 #include "blg312e.h"
 #include "request.h"
+#include <pthread.h>
+#include <unistd.h>
 
 // 
 // server.c: A very, very simple web server
@@ -32,22 +34,25 @@ int main(int argc, char *argv[])
     // 
     // blg312e: Create some threads...
     //
-
+    int * connfd_ptr;
+    
     listenfd = Open_listenfd(port);
     while (1) {
 		clientlen = sizeof(clientaddr);
-		connfd = Accept(listenfd, (SA *)&clientaddr, (socklen_t *) &clientlen);
-		
-		// 
-		// blg312e: In general, don't handle the request in the main thread.
-		// Save the relevant info in a buffer and have one of the worker threads 
-		// do the work.
-		// 
-		requestHandle(connfd);
+        connfd_ptr = (int *) malloc(sizeof(int));
+        if (connfd_ptr == NULL){
+            continue;
+        }
 
-		Close(connfd);
+        pthread_t tid;
+		*connfd_ptr = Accept(listenfd, (SA *)&clientaddr, (socklen_t *) &clientlen);
+        
+        if (pthread_create(&tid, NULL, &requestHandle, connfd_ptr) != 0  || *connfd_ptr < 0){
+            free(connfd_ptr);
+            continue;
+        }
+        pthread_detach(tid);
     }
-
 }
 
 
