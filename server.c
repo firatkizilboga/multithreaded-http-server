@@ -1,10 +1,12 @@
 #include "blg312e.h"
 #include "request.h"
+#include <bits/pthreadtypes.h>
 #include <pthread.h>
-#include <sys/semaphore.h>
+#include <semaphore.h>
+#include <time.h>
 #include <unistd.h>
 
-// 
+//
 // server.c: A very, very simple web server
 //
 // To run:
@@ -15,80 +17,110 @@
 //
 
 // blg312e: Parse the new arguments too
-void getargs(int *port, int argc, char *argv[])
-{
-    if (argc != 2) {
-		fprintf(stderr, "Usage: %s <port>\n", argv[0]);
-		exit(1);
-    }
-    *port = atoi(argv[1]);
+int arg = 1;
+void getargs(int *port, int argc, char *argv[]) {
+  if (argc != 4) {
+    fprintf(stderr, "Usage: %s <port> <threads> <buffers>\n", argv[0]);
+    exit(1);
+  }
+  *port = atoi(argv[arg]);
+  arg += 1;
 }
 
-int * connfd_buff = NULL;
-int connfd_buff_top = 0;
+int *connfd_buff = NULL;
+sem_t connfd_buff_top;
+
 int num_threads = 0; // maybe a semaphore would be better
 sem_t buff_mutex;
+int connfd_buff_size = 0;
 
-int atomic_push_to_buff(int connfd){
-    if (connfd_buff_top >= num_threads){
-        return -1;
-    }
+int atomic_push_to_buff(int connfd) {
+  sem_wait(&buff_mutex);
 
-    connfd_buff[connfd_buff_top] = connfd;
-    connfd_buff_top++;
-    return 0;
+  int top;
+  sem_getvalue(&connfd_buff_top, &top);
+
+  if (top >= connfd_buff_size) {
+    sem_post(&buff_mutex);
+    return -1;
+  }
+
+  connfd_buff[top] = connfd;
+  sem_post(&connfd_buff_top);
+  sem_post(&buff_mutex);
+  return 0;
 }
 
-int atomic_pop_from_buff(){
-    if (connfd_buff_top <= 0){
-        return -1;
-    }
+int atomic_pop_from_buff() {
+  sem_wait(&buff_mutex);
+  sem_wait(&connfd_buff_top);
 
-    connfd_buff_top--;
-    return connfd_buff[connfd_buff_top];
+  int top;
+  sem_getvalue(&connfd_buff_top, &top);
+  int val = connfd_buff[top];
+
+  sem_post(&buff_mutex);
+  return val;
 }
 
-int main(int argc, char *argv[])
-{
-    int listenfd, connfd, port, clientlen;
-    int connfd_buff_size = 0;
-    struct sockaddr_in clientaddr;
+sem_t thread_num_mutex;
+pthread_t atomic_get_new_thread(){
+    sem_wait(&thread_num_mutex);
+    pthread_t tid;
+    return tid;
+}
 
-    getargs(&port, argc, argv);
-    getargs(&num_threads, argc, argv);
-    getargs(&connfd_buff_size, argc, argv);
-    sem(&buff_mutex, 0, 1);
 
-    connfd_buff = (int *) malloc(sizeof(int) * connfd_buff_size);
+int listenfd, connfd, port, clientlen;
+struct sockaddr_in clientaddr;
 
-    if (connfd_buff == NULL){
-        fprintf(stderr, "Error: malloc failed\n");
-        exit(1);
+void* handler(){
+    while (1) {
+        pthread_t tid = atomic_get_new_thread();
+        int*fd = (int*) malloc(sizeof(int));
+        *fd = atomic_pop_from_buff();
+        if (pthread_create(&tid, NULL, &requestHandle, fd) == 0){
+            pthread_detach(tid);
+        }
     }
+    return NULL;
+}
 
+void *listener(){
     listenfd = Open_listenfd(port);
     while (1) {
-		clientlen = sizeof(clientaddr);
-        connfd_ptr = (int *) malloc(sizeof(int));
-        if (connfd_ptr == NULL){
-            continue;
-        }
-
-        pthread_t tid;
-		*connfd_ptr = Accept(listenfd, (SA *)&clientaddr, (socklen_t *) &clientlen);
-        
-        if (pthread_create(&tid, NULL, &requestHandle, connfd_ptr) != 0  || *connfd_ptr < 0){
-            free(connfd_ptr);
-            continue;
-        }
-
-        pthread_detach(tid);
+        clientlen = sizeof(clientaddr);
+        int fd = Accept(listenfd, (SA *)&clientaddr, (socklen_t *)&clientlen);
+        atomic_push_to_buff(fd);
     }
+    return NULL;
+}
+
+int main(int argc, char *argv[]) {
+  
+  getargs(&port, argc, argv);
+  getargs(&num_threads, argc, argv);
+  getargs(&connfd_buff_size, argc, argv);
+  printf("%d, %d, %d\n", port, num_threads, connfd_buff_size);
+  sem_init(&buff_mutex, 0, 1);
+  sem_init(&thread_num_mutex, 0, num_threads);
+  sem_init(&connfd_buff_top, 0, 0);
+
+  connfd_buff = (int *)malloc(sizeof(int) * connfd_buff_size);
+
+  if (connfd_buff == NULL) {
+    fprintf(stderr, "Error: malloc failed\n");
     exit(1);
+  }
+
+  pthread_t handler_tid;
+
+  if (pthread_create(&handler_tid, NULL, &handler, NULL) == 0) pthread_detach(handler_tid);
+  else exit(1);
+
+ 
+  listener();
+  return 1;
 }
 
 
-    
-
-
- 
