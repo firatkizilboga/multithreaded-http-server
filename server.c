@@ -73,6 +73,14 @@ pthread_t atomic_get_new_thread(){
 }
 
 
+void thread_cleanup(int* fd_ptr){
+    Close(*fd_ptr);
+    free(fd_ptr);
+    sem_post(&thread_num_mutex);
+    pthread_exit(NULL);
+}
+
+
 int listenfd, connfd, port, clientlen;
 struct sockaddr_in clientaddr;
 

@@ -4,6 +4,9 @@
 
 #include "request.h"
 #include "blg312e.h"
+#include <stdio.h>
+#include <unistd.h>
+extern void thread_cleanup(int* fd_ptr);
 
 // requestError(      fd,    filename,        "404",    "Not found", "blg312e
 // Server could not find this file");
@@ -151,7 +154,14 @@ void *requestHandle(void *fd_ptr) {
   char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], version[MAXLINE];
   char filename[MAXLINE], cgiargs[MAXLINE];
   rio_t rio;
-    
+
+  printf("thread spawned\n");
+  for(int i = 0; i < 10; i++){
+    sleep(1);
+    printf("Second: %d", i+1);
+    fflush(stdout);
+  }
+
   Rio_readinitb(&rio, fd);
   Rio_readlineb(&rio, buf, MAXLINE);
   sscanf(buf, "%s %s %s", method, uri, version);
@@ -161,9 +171,10 @@ void *requestHandle(void *fd_ptr) {
   if (strcasecmp(method, "GET")) {
     requestError(fd, method, "501", "Not Implemented",
                  "blg312e Server does not implement this method");
-    free(fd_ptr);
-    Close(fd);
-    pthread_exit(NULL);
+    
+    thread_cleanup((int*)fd_ptr);
+
+    
     return NULL;
   }
   requestReadhdrs(&rio);
@@ -172,9 +183,7 @@ void *requestHandle(void *fd_ptr) {
   if (stat(filename, &sbuf) < 0) {
     requestError(fd, filename, "404", "Not found",
                  "blg312e Server could not find this file");
-    free(fd_ptr);
-    Close(fd);
-    pthread_exit(NULL);
+    thread_cleanup((int*)fd_ptr);
     return NULL;
   }
 
@@ -182,9 +191,8 @@ void *requestHandle(void *fd_ptr) {
     if (!(S_ISREG(sbuf.st_mode)) || !(S_IRUSR & sbuf.st_mode)) {
       requestError(fd, filename, "403", "Forbidden",
                    "blg312e Server could not read this file");
-      free(fd_ptr);
-      Close(fd);
-      pthread_exit(NULL);
+      thread_cleanup((int*)fd_ptr);
+
       return NULL;
     }
     requestServeStatic(fd, filename, sbuf.st_size);
@@ -192,15 +200,14 @@ void *requestHandle(void *fd_ptr) {
     if (!(S_ISREG(sbuf.st_mode)) || !(S_IXUSR & sbuf.st_mode)) {
       requestError(fd, filename, "403", "Forbidden",
                    "blg312e Server could not run this CGI program");
-      free(fd_ptr);
-      Close(fd);
-      pthread_exit(NULL);
+
+
+      thread_cleanup((int*)fd_ptr);
+
       return NULL;
     }
     requestServeDynamic(fd, filename, cgiargs);
   }
-  free(fd_ptr);
-  Close(fd);
-  pthread_exit(NULL);
+  thread_cleanup((int*) fd_ptr);
   return NULL;
 }
