@@ -37,11 +37,12 @@ int connfd_buff_size = 0;
 int atomic_push_to_buff(int connfd) {
   sem_wait(&buff_mutex);
 
-  printf("atomic pop from buffer\n");
+  printf("atomic push to buffer\n");
   int top;
   sem_getvalue(&connfd_buff_top, &top);
 
   if (top >= connfd_buff_size) {
+    Close(connfd);
     sem_post(&buff_mutex);
     return -1;
   }
