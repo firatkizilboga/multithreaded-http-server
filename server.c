@@ -37,7 +37,6 @@ int connfd_buff_size = 0;
 int atomic_push_to_buff(int connfd) {
   sem_wait(&buff_mutex);
 
-  printf("atomic push to buffer\n");
   int top;
   sem_getvalue(&connfd_buff_top, &top);
 
@@ -56,7 +55,7 @@ int atomic_push_to_buff(int connfd) {
 int atomic_pop_from_buff() {
   sem_wait(&connfd_buff_top);
   sem_wait(&buff_mutex);
-  printf("atomic pop from buffer\n");
+ 
   int top;
   sem_getvalue(&connfd_buff_top, &top);
   int val = connfd_buff[top];
@@ -68,7 +67,7 @@ int atomic_pop_from_buff() {
 sem_t thread_num_mutex;
 pthread_t atomic_get_new_thread(){
     sem_wait(&thread_num_mutex);
-    printf("get new thread\n");
+    
     pthread_t tid;
     return tid;
 }
@@ -86,7 +85,7 @@ int listenfd, connfd, port, clientlen;
 struct sockaddr_in clientaddr;
 
 void* handler(){
-    printf("handler\n");
+    
     while (1) {
         pthread_t tid = atomic_get_new_thread();
         int*fd = (int*) malloc(sizeof(int));
@@ -99,7 +98,7 @@ void* handler(){
 }
 
 void *listener(){
-    printf("listener\n");
+    
     listenfd = Open_listenfd(port);
     while (1) {
         clientlen = sizeof(clientaddr);
@@ -114,7 +113,7 @@ int main(int argc, char *argv[]) {
   getargs(&port, argc, argv);
   getargs(&num_threads, argc, argv);
   getargs(&connfd_buff_size, argc, argv);
-  printf("%d, %d, %d\n", port, num_threads, connfd_buff_size);
+  
   sem_init(&buff_mutex, 0, 1);
   sem_init(&thread_num_mutex, 0, num_threads);
   sem_init(&connfd_buff_top, 0, 0);
